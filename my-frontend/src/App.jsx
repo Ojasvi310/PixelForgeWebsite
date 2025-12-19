@@ -1,4 +1,6 @@
 import React, { useState } from "react";
+import { useAuth } from "./context/AuthContext";
+import AuthModal from "./components/AuthModal";
 
 const BACKEND_URL = "http://localhost:8000";
 const PREVIEW_URL = "http://localhost:3001";
@@ -6,7 +8,10 @@ const PREVIEW_URL = "http://localhost:3001";
 async function generateWebsite(prompt) {
   const res = await fetch(`${BACKEND_URL}/generate`, {
     method: "POST",
-    headers: { "Content-Type": "application/json" },
+    headers: { 
+      "Content-Type": "application/json",
+      "Authorization": `Bearer ${localStorage.getItem('token')}`
+    },
     body: JSON.stringify({ prompt }),
   });
 
@@ -34,6 +39,10 @@ async function createPreview(files) {
 }
 
 export default function App() {
+  const { user, logout } = useAuth();
+  const [authModalOpen, setAuthModalOpen] = useState(false);
+  const [authMode, setAuthMode] = useState('login');
+  
   const [prompt, setPrompt] = useState("");
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState(null);
@@ -44,7 +53,19 @@ export default function App() {
   const [selectedFile, setSelectedFile] = useState(null);
   const [showDebug, setShowDebug] = useState(false);
 
+  const openAuthModal = (mode) => {
+    setAuthMode(mode);
+    setAuthModalOpen(true);
+  };
+
   async function handleGenerate() {
+    // Check if user is logged in
+    if (!user) {
+      setError("Please sign in to generate websites");
+      openAuthModal('login');
+      return;
+    }
+
     if (!prompt.trim()) {
       setError("Please enter a prompt");
       return;
@@ -65,12 +86,6 @@ export default function App() {
 
       console.log("✅ Generated data:", data);
       console.log("✅ Files received:", Object.keys(data.files || {}));
-      console.log(
-        "✅ File sizes:",
-        Object.entries(data.files || {}).map(
-          ([k, v]) => `${k}: ${v?.length || 0} bytes`
-        )
-      );
 
       // Step 2: Create preview
       setStage("Building preview...");
@@ -84,7 +99,7 @@ export default function App() {
       } catch (previewErr) {
         console.error("⚠️ Preview build failed:", previewErr.message);
         setPreviewError(previewErr.message);
-        setShowDebug(true); // Auto-show debug panel on error
+        setShowDebug(true);
         setStage("");
       }
     } catch (e) {
@@ -101,15 +116,55 @@ export default function App() {
 
   return (
     <div className="min-h-screen bg-gradient-to-br from-gray-900 via-gray-800 to-cyan-900 text-gray-100 flex flex-col">
+      {/* AUTH MODAL */}
+      <AuthModal
+        isOpen={authModalOpen}
+        onClose={() => setAuthModalOpen(false)}
+        initialMode={authMode}
+      />
+
       {/* HEADER */}
       <header className="bg-gray-900/80 shadow-lg py-6 border-b border-gray-700">
-        <div className="max-w-7xl mx-auto px-4">
-          <h1 className="text-4xl font-bold text-center bg-gradient-to-r from-blue-400 via-purple-500 to-pink-500 bg-clip-text text-transparent">
-            PixelForge — AI Website Generator
-          </h1>
-          <p className="text-center text-gray-400 mt-2">
-            Describe your website and watch it come to life
-          </p>
+        <div className="max-w-7xl mx-auto px-4 flex justify-between items-center">
+          <div className="flex-1">
+            <h1 className="text-4xl font-bold bg-gradient-to-r from-blue-400 via-purple-500 to-pink-500 bg-clip-text text-transparent">
+              PixelForge
+            </h1>
+            <p className="text-gray-400 mt-1">AI Website Generator</p>
+          </div>
+
+          {/* AUTH BUTTONS */}
+          <div className="flex items-center gap-4">
+            {user ? (
+              <>
+                <div className="text-right">
+                  <p className="text-sm text-gray-300">Welcome,</p>
+                  <p className="font-semibold text-cyan-400">{user.name}</p>
+                </div>
+                <button
+                  onClick={logout}
+                  className="px-4 py-2 bg-gray-700 hover:bg-gray-600 rounded-lg transition font-medium"
+                >
+                  Sign Out
+                </button>
+              </>
+            ) : (
+              <>
+                <button
+                  onClick={() => openAuthModal('login')}
+                  className="px-4 py-2 bg-gray-700 hover:bg-gray-600 rounded-lg transition font-medium"
+                >
+                  Sign In
+                </button>
+                <button
+                  onClick={() => openAuthModal('signup')}
+                  className="px-4 py-2 bg-gradient-to-r from-cyan-600 to-blue-600 hover:from-cyan-700 hover:to-blue-700 rounded-lg transition font-medium"
+                >
+                  Sign Up
+                </button>
+              </>
+            )}
+          </div>
         </div>
       </header>
 
@@ -122,18 +177,26 @@ export default function App() {
               Describe Your Website
             </h2>
 
+            {!user && (
+              <div className="mb-4 p-4 bg-yellow-900/30 border border-yellow-600 rounded-lg">
+                <p className="text-yellow-200 text-sm">
+                  ⚠️ Please sign in to use the website generator
+                </p>
+              </div>
+            )}
+
             <textarea
               className="w-full p-4 rounded-lg bg-gray-800 border border-gray-700 focus:ring-2 focus:ring-cyan-500 outline-none resize-none"
               placeholder="Example: Create a modern landing page for a coffee shop with a hero section, menu showcase, and contact form. Use warm brown tones and a cozy aesthetic."
               value={prompt}
               onChange={(e) => setPrompt(e.target.value)}
               rows={8}
-              disabled={loading}
+              disabled={loading || !user}
             />
 
             <button
               onClick={handleGenerate}
-              disabled={loading || !prompt.trim()}
+              disabled={loading || !prompt.trim() || !user}
               className="mt-4 w-full py-3 rounded-lg bg-gradient-to-r from-cyan-600 to-blue-600 hover:from-cyan-700 hover:to-blue-700 transition font-semibold disabled:opacity-50 disabled:cursor-not-allowed shadow-lg"
             >
               {loading ? "Generating..." : "Generate Website"}
@@ -190,7 +253,6 @@ export default function App() {
                   </p>
                 </div>
 
-                {/* FILE LIST */}
                 <details className="mt-3">
                   <summary className="cursor-pointer text-green-200 hover:text-green-100">
                     View generated files
@@ -225,11 +287,9 @@ export default function App() {
         {/* RIGHT PANEL - LIVE PREVIEW OR DEBUG */}
         <section className="w-1/2 p-6 overflow-hidden flex flex-col">
           {showDebug && generatedData ? (
-            // DEBUG FILE VIEWER
             <div className="flex flex-col h-full">
               <h3 className="text-2xl font-semibold mb-4">📋 File Inspector</h3>
 
-              {/* FILE LIST */}
               <div className="mb-4 pb-4 border-b border-gray-700 overflow-y-auto max-h-32">
                 <div className="flex flex-wrap gap-2">
                   {fileList.map((file) => (
@@ -248,7 +308,6 @@ export default function App() {
                 </div>
               </div>
 
-              {/* FILE CONTENT */}
               {selectedFile && (
                 <div className="flex-1 flex flex-col overflow-hidden">
                   <div className="mb-2">
@@ -262,7 +321,7 @@ export default function App() {
 
                   <pre className="flex-1 bg-gray-800 p-4 rounded border border-gray-700 overflow-auto text-xs text-gray-300 font-mono">
                     {files[selectedFile]
-                      ? files[selectedFile].substring(0, 5000) // Limit to 5000 chars for display
+                      ? files[selectedFile].substring(0, 5000)
                       : "File not found"}
                     {files[selectedFile]?.length > 5000 && (
                       <div className="text-yellow-400 mt-4">
@@ -272,7 +331,6 @@ export default function App() {
                     )}
                   </pre>
 
-                  {/* COPY BUTTON */}
                   <button
                     onClick={() => {
                       navigator.clipboard.writeText(files[selectedFile] || "");
@@ -286,7 +344,6 @@ export default function App() {
               )}
             </div>
           ) : (
-            // PREVIEW IFRAME
             <>
               <h3 className="text-2xl font-semibold mb-4">Live Preview</h3>
 
@@ -313,10 +370,14 @@ export default function App() {
                     <p className="text-xl text-gray-400">
                       {loading
                         ? "Generating preview..."
-                        : "Preview will appear here"}
+                        : user
+                        ? "Preview will appear here"
+                        : "Sign in to start generating"}
                     </p>
                     <p className="text-sm text-gray-500 mt-2">
-                      Describe your website and click Generate
+                      {user
+                        ? "Describe your website and click Generate"
+                        : "Create an account to use PixelForge"}
                     </p>
                   </div>
                 </div>

@@ -1,18 +1,46 @@
 # backend/app.py
 
-from fastapi import FastAPI, HTTPException
+from fastapi import FastAPI, HTTPException, Depends
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
+from contextlib import asynccontextmanager
 
-# Correct agent imports
+# Agent imports
 from agents.planner import plan_from_prompt
 from agents.designer import generate_theme
 from agents.codegen import generate_files
-from agents.validator import validate_files
+
+# Auth imports
+from auth.routes import router as auth_router
+from auth.database import create_indexes
+from auth.utils import verify_token
 
 import uvicorn
 
-app = FastAPI(title="AI Website Builder API")
+# --------------------------
+# LIFESPAN EVENTS
+# --------------------------
+
+@asynccontextmanager
+async def lifespan(app: FastAPI):
+    # Startup
+    print("🚀 Starting PixelForge API...")
+    try:
+        await create_indexes()
+        print("✅ Database indexes created")
+    except Exception as e:
+        print(f"⚠️ Database setup warning: {e}")
+    yield
+    # Shutdown
+    print("👋 Shutting down PixelForge API...")
+
+# --------------------------
+# APP INITIALIZATION
+# --------------------------
+
+app = FastAPI(title="AI Website Builder API", lifespan=lifespan)
+
+# Include auth routes
 
 # --------------------------
 # CORS CONFIG
@@ -20,11 +48,11 @@ app = FastAPI(title="AI Website Builder API")
 
 origins = [
     "http://localhost",
-    "http://localhost:3000",
-    "http://localhost:3001",  # Preview server
     "http://localhost:5173",
     "http://127.0.0.1:5173",
+    "http://localhost:3000",
     "http://127.0.0.1:3000",
+    "http://localhost:3001", 
     "http://127.0.0.1:3001",
 ]
 
@@ -35,6 +63,8 @@ app.add_middleware(
     allow_methods=["*"],
     allow_headers=["*"],
 )
+app.include_router(auth_router)
+
 
 # --------------------------
 # REQUEST MODEL
@@ -45,19 +75,26 @@ class PromptIn(BaseModel):
 
 
 # --------------------------
-# MAIN ENDPOINT
+# MAIN ENDPOINT (PROTECTED)
 # --------------------------
 
 @app.post("/generate")
-async def generate_site(data: PromptIn):
+async def generate_site(data: PromptIn, token_data: dict = Depends(verify_token)):
+    """
+    Generate website from prompt (requires authentication)
+    
+    Protected endpoint - requires valid JWT token in Authorization header
+    """
     prompt = data.prompt.strip()
     if not prompt:
         raise HTTPException(status_code=400, detail="Empty prompt")
 
     try:
+        user_email = token_data.get("sub")
         print("\n" + "="*70)
         print("STARTING WEBSITE GENERATION")
         print("="*70)
+        print(f"User: {user_email}")
         print(f"Prompt: {prompt}")
         print()
 
@@ -78,10 +115,9 @@ async def generate_site(data: PromptIn):
         files = generate_files(prompt, structure, design)
         print(f"✓ Generated {len(files)} files")
 
-        # 4️⃣ Validator → fix JSX if needed
-        print("\nSTEP 4: Validating...")
-        validated_files = validate_files(files)
-        print(f"✓ Validated {len(validated_files)} files")
+        # 4️⃣ Skip validation (files are pre-validated in codegen)
+        print("\nSTEP 4: Skipping validation (files pre-validated)")
+        validated_files = files
 
         print("\n" + "="*70)
         print("GENERATION COMPLETE")
@@ -109,8 +145,17 @@ async def generate_site(data: PromptIn):
 async def root():
     return {
         "status": "ok",
-        "message": "AI Website Builder API",
-        "version": "1.0.0"
+        "message": "AI Website Builder API with Authentication",
+        "version": "2.0.0",
+        "endpoints": {
+            "auth": {
+                "signup": "POST /auth/signup",
+                "login": "POST /auth/login"
+            },
+            "generation": {
+                "generate": "POST /generate (requires auth)"
+            }
+        }
     }
 
 
