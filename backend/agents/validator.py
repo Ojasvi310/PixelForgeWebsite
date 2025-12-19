@@ -1,26 +1,4 @@
-# #validator.py
-# from bs4 import BeautifulSoup
 
-# def validate_html(html: str):
-#     """
-#     A tiny validator: checks parseability and presence of <html>, <head>, <body>
-#     Returns list of issues (empty if none).
-#     """
-#     issues = []
-#     try:
-#         soup = BeautifulSoup(html, "html.parser")
-#     except Exception as e:
-#         return [f"Parse error: {e}"]
-
-#     if not soup.find("html"):
-#         issues.append("<html> tag missing")
-#     if not soup.find("body"):
-#         issues.append("<body> tag missing")
-#     # basic check for script tag issues (very simple)
-#     for script in soup.find_all("script"):
-#         if script.get("src") is None and not script.string:
-#             issues.append("Empty inline <script> tag found")
-#     return issues
 # agents/validator.py
 
 import re
